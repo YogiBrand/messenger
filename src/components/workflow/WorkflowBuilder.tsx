@@ -93,34 +93,38 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isLocked, setIsLocked] = useState(true); // Default to locked (static positioning)
   const [savedViewport, setSavedViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
+  const [hasInitializedView, setHasInitializedView] = useState(false);
 
   const reactFlowInstance = useReactFlow();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
-  // Constants for perfect spacing (matching Paragon screenshot)
+  // Constants for perfect spacing (exactly 3 grid snaps = 60px between nodes)
   const NODE_WIDTH = 320;
   const NODE_HEIGHT = 120;
-  const VERTICAL_SPACING = 200; // Much larger spacing to match Paragon
+  const GRID_SIZE = 20; // ReactFlow grid size
+  const VERTICAL_SPACING = GRID_SIZE * 3; // Exactly 3 grid snaps = 60px
+  const TOTAL_NODE_SPACING = NODE_HEIGHT + VERTICAL_SPACING; // 120 + 60 = 180px total
   const CANVAS_CENTER_X = 400;
   const INITIAL_Y = 100;
 
-  // Calculate perfect vertical positions
+  // Calculate perfect vertical positions with exact 3-grid-snap spacing
   const calculateNodePosition = (index: number) => ({
     x: CANVAS_CENTER_X - NODE_WIDTH / 2,
-    y: INITIAL_Y + index * (NODE_HEIGHT + VERTICAL_SPACING)
+    y: INITIAL_Y + index * TOTAL_NODE_SPACING
   });
 
-  // Auto-fit view to show all nodes with proper spacing
-  const autoFitView = useCallback(() => {
+  // Auto-fit view with smooth transition and proper bounds
+  const autoFitView = useCallback((immediate = false) => {
     if (reactFlowInstance && nodes.length > 0) {
+      const delay = immediate ? 0 : 200;
       setTimeout(() => {
         reactFlowInstance.fitView({
-          padding: 0.2,
-          minZoom: 0.4,
-          maxZoom: 1.2,
-          duration: 800
+          padding: 0.3, // More padding for better view
+          minZoom: 0.3,
+          maxZoom: 1.0,
+          duration: immediate ? 0 : 600 // Smoother, shorter animation
         });
-      }, 100);
+      }, delay);
     }
   }, [reactFlowInstance, nodes.length]);
 
@@ -173,12 +177,13 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       setWorkflowName(currentWorkflow.name);
       setWorkflowStatus(currentWorkflow.status as any);
 
-      // Auto-fit view when nodes are loaded
-      if (flowNodes.length > 0) {
-        autoFitView();
+      // Only auto-fit on initial load or when specifically requested
+      if (!hasInitializedView && flowNodes.length > 0) {
+        autoFitView(true); // Immediate fit on first load
+        setHasInitializedView(true);
       }
     }
-  }, [currentWorkflow, isLocked, setNodes, setEdges, setSelectedNode, setConfigPanelOpen, autoFitView]);
+  }, [currentWorkflow, isLocked, setNodes, setEdges, setSelectedNode, setConfigPanelOpen, hasInitializedView, autoFitView]);
 
   // Update node draggability when lock state changes
   useEffect(() => {
@@ -214,10 +219,12 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       });
     });
 
-    // Auto-fit view after deletion
-    setTimeout(() => {
-      autoFitView();
-    }, 100);
+    // Only auto-fit if there are remaining nodes
+    if (remainingNodes.length > 0) {
+      setTimeout(() => {
+        autoFitView();
+      }, 100);
+    }
   };
 
   const onConnect = useCallback(
@@ -304,10 +311,10 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     setShowNodeLibrary(false);
     setAddNodeAfter(null);
 
-    // Auto-fit view after adding node
+    // Auto-fit view after adding node with slight delay
     setTimeout(() => {
       autoFitView();
-    }, 100);
+    }, 150);
   };
 
   const handleSave = () => {
@@ -369,10 +376,10 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       });
     });
 
-    // Auto-fit view after cleanup
+    // Auto-fit view after cleanup with slight delay
     setTimeout(() => {
       autoFitView();
-    }, 100);
+    }, 150);
   };
 
   const getStatusColor = () => {
@@ -551,11 +558,11 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
               connectionMode={ConnectionMode.Loose}
               fitView={false}
               className="bg-gray-50"
-              defaultViewport={{ x: 0, y: 0, zoom: 0.6 }} // Better initial zoom
+              defaultViewport={{ x: 0, y: 0, zoom: 0.7 }} // Better initial zoom
               minZoom={0.2}
               maxZoom={1.5}
               snapToGrid={true}
-              snapGrid={[20, 20]}
+              snapGrid={[GRID_SIZE, GRID_SIZE]} // Use consistent grid size
               deleteKeyCode={['Backspace', 'Delete']}
               nodesDraggable={!isLocked}
               nodesConnectable={!isLocked} // Only allow connections when unlocked
@@ -567,7 +574,7 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
             >
               <Background 
                 color="#e5e7eb" 
-                gap={20} 
+                gap={GRID_SIZE} 
                 size={1}
                 variant="dots"
               />
