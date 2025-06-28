@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useRef } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -12,17 +12,52 @@ import ReactFlow, {
   Panel,
   ReactFlowProvider,
   useReactFlow,
-  ConnectionMode
+  ConnectionMode,
+  MarkerType
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { ChevronLeft, Play, Save, MoreHorizontal, TestTube, Share, Plus } from 'lucide-react';
+import { 
+  ChevronLeft, 
+  Play, 
+  Save, 
+  MoreHorizontal, 
+  TestTube, 
+  Share, 
+  Plus,
+  Clock,
+  Zap,
+  Settings,
+  GitBranch,
+  Calendar,
+  Globe,
+  Code,
+  Database,
+  ArrowRight,
+  CheckCircle,
+  AlertCircle,
+  Pause,
+  RotateCcw
+} from 'lucide-react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import CustomNode from './CustomNode';
 import NodeConfigPanel from './NodeConfigPanel';
 import NodeLibrary from './NodeLibrary';
+import WorkflowSidebar from './WorkflowSidebar';
 
 const nodeTypes = {
   custom: CustomNode,
+};
+
+const edgeOptions = {
+  animated: false,
+  style: {
+    stroke: '#6366f1',
+    strokeWidth: 2,
+  },
+  markerEnd: {
+    type: MarkerType.ArrowClosed,
+    color: '#6366f1',
+  },
 };
 
 interface WorkflowBuilderProps {
@@ -38,7 +73,8 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     addNode,
     addEdge: addWorkflowEdge,
     setSelectedNode,
-    setConfigPanelOpen
+    setConfigPanelOpen,
+    workflows
   } = useWorkflowStore();
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -47,18 +83,27 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   const [workflowName, setWorkflowName] = useState(currentWorkflow?.name || 'New Workflow');
   const [isEditingName, setIsEditingName] = useState(false);
   const [addNodePosition, setAddNodePosition] = useState<{ x: number; y: number } | null>(null);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [workflowStatus, setWorkflowStatus] = useState<'draft' | 'published' | 'testing'>('draft');
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
   const reactFlowInstance = useReactFlow();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   // Initialize nodes and edges from current workflow
-  React.useEffect(() => {
+  useEffect(() => {
     if (currentWorkflow) {
       const flowNodes = currentWorkflow.nodes.map(node => ({
         id: node.id,
         type: 'custom',
         position: node.position,
-        data: node.data,
+        data: {
+          ...node.data,
+          onConfigClick: () => {
+            setSelectedNode(node);
+            setConfigPanelOpen(true);
+          }
+        },
         draggable: true
       }));
       
@@ -70,26 +115,25 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
         label: edge.label,
         sourceHandle: edge.sourceHandle,
         targetHandle: edge.targetHandle,
-        style: { 
-          stroke: '#6366f1', 
-          strokeWidth: 2,
+        ...edgeOptions,
+        style: {
+          ...edgeOptions.style,
           strokeDasharray: edge.type === 'conditional' ? '5,5' : undefined
-        },
-        animated: false
+        }
       }));
 
       setNodes(flowNodes);
       setEdges(flowEdges);
       setWorkflowName(currentWorkflow.name);
+      setWorkflowStatus(currentWorkflow.status as any);
     }
-  }, [currentWorkflow, setNodes, setEdges]);
+  }, [currentWorkflow, setNodes, setEdges, setSelectedNode, setConfigPanelOpen]);
 
   const onConnect = useCallback(
     (params: Connection) => {
       const newEdge = {
         ...params,
-        type: 'default',
-        style: { stroke: '#6366f1', strokeWidth: 2 }
+        ...edgeOptions
       };
       setEdges((eds) => addEdge(newEdge, eds));
       
@@ -110,19 +154,20 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     const workflowNode = currentWorkflow?.nodes.find(n => n.id === node.id);
     if (workflowNode) {
       setSelectedNode(workflowNode);
+      setConfigPanelOpen(true);
     }
-  }, [currentWorkflow, setSelectedNode]);
+  }, [currentWorkflow, setSelectedNode, setConfigPanelOpen]);
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
-  }, [setSelectedNode]);
+    setConfigPanelOpen(false);
+  }, [setSelectedNode, setConfigPanelOpen]);
 
   const handleAddNode = (nodeTemplate: any, position?: { x: number; y: number }) => {
     const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect();
     
     let newPosition = position;
     if (!newPosition && reactFlowBounds && reactFlowInstance) {
-      // Center the new node in the viewport
       const centerX = reactFlowBounds.width / 2;
       const centerY = reactFlowBounds.height / 2;
       newPosition = reactFlowInstance.project({ x: centerX, y: centerY });
@@ -130,6 +175,17 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     
     if (!newPosition) {
       newPosition = { x: 250, y: 200 };
+    }
+
+    // Auto-position nodes vertically if it's the first node
+    if (nodes.length === 0) {
+      newPosition = { x: 400, y: 100 };
+    } else if (nodes.length === 1) {
+      newPosition = { x: 400, y: 250 };
+    } else {
+      // Position below the last node
+      const lastNode = nodes[nodes.length - 1];
+      newPosition = { x: lastNode.position.x, y: lastNode.position.y + 150 };
     }
 
     const newNode = {
@@ -142,7 +198,8 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
         icon: nodeTemplate.icon,
         integration: nodeTemplate.integration,
         config: nodeTemplate.config || {},
-        status: 'idle' as const
+        status: 'idle' as const,
+        nodeType: nodeTemplate.type
       }
     };
 
@@ -151,31 +208,22 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     setAddNodePosition(null);
   };
 
-  const handleAddNodeBetween = (sourceId: string, targetId: string) => {
-    const sourceNode = nodes.find(n => n.id === sourceId);
-    const targetNode = nodes.find(n => n.id === targetId);
-    
-    if (sourceNode && targetNode) {
-      const position = {
-        x: (sourceNode.position.x + targetNode.position.x) / 2,
-        y: (sourceNode.position.y + targetNode.position.y) / 2 + 50
-      };
-      setAddNodePosition(position);
-      setShowNodeLibrary(true);
-    }
-  };
-
   const handleSave = () => {
     if (currentWorkflow) {
       updateWorkflow(currentWorkflow.id, {
         name: workflowName,
-        status: 'draft'
+        status: workflowStatus
       });
+      setLastSaved(new Date());
     }
   };
 
   const handleTest = () => {
-    console.log('Testing workflow...');
+    setWorkflowStatus('testing');
+    // Simulate test execution
+    setTimeout(() => {
+      setWorkflowStatus('draft');
+    }, 3000);
   };
 
   const handleDeploy = () => {
@@ -183,6 +231,8 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       updateWorkflow(currentWorkflow.id, {
         status: 'published'
       });
+      setWorkflowStatus('published');
+      setLastSaved(new Date());
     }
   };
 
@@ -194,6 +244,28 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     setIsEditingName(false);
     if (currentWorkflow) {
       updateWorkflow(currentWorkflow.id, { name: workflowName });
+    }
+  };
+
+  const getStatusColor = () => {
+    switch (workflowStatus) {
+      case 'published':
+        return 'text-green-600';
+      case 'testing':
+        return 'text-yellow-600';
+      default:
+        return 'text-gray-600';
+    }
+  };
+
+  const getStatusIcon = () => {
+    switch (workflowStatus) {
+      case 'published':
+        return <CheckCircle className="w-4 h-4" />;
+      case 'testing':
+        return <Clock className="w-4 h-4 animate-spin" />;
+      default:
+        return <Pause className="w-4 h-4" />;
     }
   };
 
@@ -214,165 +286,209 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-white">
-      {/* Top Toolbar - Exact Paragon styling */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            <span className="text-sm">Integrations / Mailchimp</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {isEditingName ? (
-            <input
-              type="text"
-              value={workflowName}
-              onChange={(e) => setWorkflowName(e.target.value)}
-              onBlur={handleNameSave}
-              onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
-              className="text-lg font-semibold text-gray-900 bg-transparent border-b border-gray-300 focus:border-indigo-500 focus:outline-none px-2 py-1"
-              autoFocus
-            />
-          ) : (
-            <h1 
-              className="text-lg font-semibold text-gray-900 cursor-pointer hover:text-indigo-600 px-2 py-1 rounded"
-              onClick={handleNameEdit}
-            >
-              {workflowName}
-            </h1>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button className="text-gray-600 hover:text-gray-900 text-sm font-medium">
-            Test Connect Portal
-          </button>
-          <button 
-            onClick={handleTest}
-            className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors text-sm font-medium"
-          >
-            <TestTube className="w-4 h-4" />
-            Test Workflow
-          </button>
-          <button 
-            onClick={handleDeploy}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-          >
-            Deploy
-          </button>
-          <button className="p-2 text-gray-400 hover:text-gray-600">
-            <MoreHorizontal className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
+    <div className="h-screen flex bg-gray-50">
+      {/* Left Sidebar - Workflows List */}
+      {showSidebar && (
+        <WorkflowSidebar 
+          workflows={workflows}
+          currentWorkflow={currentWorkflow}
+          onWorkflowSelect={(workflow) => {
+            // Handle workflow selection
+          }}
+          onCreateWorkflow={() => setShowNodeLibrary(true)}
+          onToggleSidebar={() => setShowSidebar(false)}
+        />
+      )}
 
       {/* Main Content */}
-      <div className="flex-1 flex">
-        {/* Canvas */}
-        <div className="flex-1 relative" ref={reactFlowWrapper}>
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={onNodeClick}
-            onPaneClick={onPaneClick}
-            nodeTypes={nodeTypes}
-            connectionMode={ConnectionMode.Loose}
-            fitView
-            className="bg-gray-50"
-            defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-            minZoom={0.5}
-            maxZoom={2}
-            snapToGrid={true}
-            snapGrid={[20, 20]}
-          >
-            <Background 
-              color="#e5e7eb" 
-              gap={20} 
-              size={1}
-              variant="dots"
-            />
-            <Controls 
-              className="bg-white border border-gray-200 rounded-lg shadow-sm"
-              showInteractive={false}
-            />
-            <MiniMap 
-              className="bg-white border border-gray-200 rounded-lg"
-              nodeColor="#6366f1"
-              maskColor="rgba(0, 0, 0, 0.1)"
-              pannable
-              zoomable
-            />
-            
-            {/* Empty State */}
-            {nodes.length === 0 && (
-              <Panel position="top-center" className="mt-20">
-                <div className="text-center bg-white rounded-lg border border-gray-200 p-8 shadow-sm">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Plus className="w-8 h-8 text-gray-400" />
-                  </div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Start building your workflow</h3>
-                  <p className="text-gray-600 text-sm mb-6 max-w-sm">
-                    Add your first trigger to get started. Triggers define when your workflow should run.
-                  </p>
-                  <button
-                    onClick={() => setShowNodeLibrary(true)}
-                    className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
-                  >
-                    Choose a Trigger
-                  </button>
-                </div>
-              </Panel>
+      <div className="flex-1 flex flex-col">
+        {/* Top Toolbar */}
+        <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {!showSidebar && (
+              <button
+                onClick={() => setShowSidebar(true)}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+              >
+                <GitBranch className="w-5 h-5" />
+              </button>
+            )}
+            <button
+              onClick={onBack}
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="text-sm">Integrations</span>
+            </button>
+            <ArrowRight className="w-4 h-4 text-gray-400" />
+            <span className="text-sm text-gray-600 capitalize">{currentWorkflow.integration || 'Mailchimp'}</span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {isEditingName ? (
+              <input
+                type="text"
+                value={workflowName}
+                onChange={(e) => setWorkflowName(e.target.value)}
+                onBlur={handleNameSave}
+                onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
+                className="text-lg font-semibold text-gray-900 bg-transparent border-b border-gray-300 focus:border-indigo-500 focus:outline-none px-2 py-1"
+                autoFocus
+              />
+            ) : (
+              <h1 
+                className="text-lg font-semibold text-gray-900 cursor-pointer hover:text-indigo-600 px-2 py-1 rounded"
+                onClick={handleNameEdit}
+              >
+                {workflowName}
+              </h1>
             )}
 
-            {/* Add Node Buttons Between Nodes */}
-            {edges.map((edge) => {
-              const sourceNode = nodes.find(n => n.id === edge.source);
-              const targetNode = nodes.find(n => n.id === edge.target);
-              
-              if (!sourceNode || !targetNode) return null;
-              
-              const midX = (sourceNode.position.x + targetNode.position.x) / 2;
-              const midY = (sourceNode.position.y + targetNode.position.y) / 2;
-              
-              return (
-                <Panel key={`add-${edge.id}`} position="top-left" style={{ transform: `translate(${midX}px, ${midY}px)` }}>
-                  <button
-                    onClick={() => handleAddNodeBetween(edge.source, edge.target)}
-                    className="w-8 h-8 bg-white border-2 border-gray-300 rounded-full flex items-center justify-center hover:border-indigo-500 hover:bg-indigo-50 transition-colors shadow-sm"
-                  >
-                    <Plus className="w-4 h-4 text-gray-600" />
-                  </button>
-                </Panel>
-              );
-            })}
-          </ReactFlow>
+            <div className={`flex items-center gap-2 text-sm ${getStatusColor()}`}>
+              {getStatusIcon()}
+              <span className="capitalize">{workflowStatus}</span>
+            </div>
 
-          {/* Floating Add Button */}
-          {nodes.length > 0 && (
+            {lastSaved && (
+              <span className="text-xs text-gray-500">
+                Saved {lastSaved.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={handleTest}
+              disabled={workflowStatus === 'testing'}
+              className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
+            >
+              <TestTube className="w-4 h-4" />
+              {workflowStatus === 'testing' ? 'Testing...' : 'Test Workflow'}
+            </button>
+            <button 
+              onClick={handleSave}
+              className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors text-sm font-medium"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+            <button 
+              onClick={handleDeploy}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+            >
+              {workflowStatus === 'published' ? 'Published' : 'Publish'}
+            </button>
+            <button className="p-2 text-gray-400 hover:text-gray-600">
+              <MoreHorizontal className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Canvas Area */}
+        <div className="flex-1 flex">
+          <div className="flex-1 relative" ref={reactFlowWrapper}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={onNodeClick}
+              onPaneClick={onPaneClick}
+              nodeTypes={nodeTypes}
+              connectionMode={ConnectionMode.Loose}
+              fitView
+              className="bg-gray-50"
+              defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+              minZoom={0.3}
+              maxZoom={2}
+              snapToGrid={true}
+              snapGrid={[20, 20]}
+              deleteKeyCode={['Backspace', 'Delete']}
+            >
+              <Background 
+                color="#e5e7eb" 
+                gap={20} 
+                size={1}
+                variant="dots"
+              />
+              <Controls 
+                className="bg-white border border-gray-200 rounded-lg shadow-sm"
+                showInteractive={false}
+              />
+              <MiniMap 
+                className="bg-white border border-gray-200 rounded-lg"
+                nodeColor="#6366f1"
+                maskColor="rgba(0, 0, 0, 0.1)"
+                pannable
+                zoomable
+                position="bottom-left"
+              />
+              
+              {/* Empty State */}
+              {nodes.length === 0 && (
+                <Panel position="top-center" className="mt-20">
+                  <div className="text-center bg-white rounded-lg border border-gray-200 p-8 shadow-sm max-w-md">
+                    <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Zap className="w-8 h-8 text-indigo-600" />
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Start building your workflow</h3>
+                    <p className="text-gray-600 text-sm mb-6">
+                      Add your first trigger to get started. Triggers define when your workflow should run.
+                    </p>
+                    <button
+                      onClick={() => setShowNodeLibrary(true)}
+                      className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+                    >
+                      Choose a Trigger
+                    </button>
+                  </div>
+                </Panel>
+              )}
+
+              {/* Add Node Buttons Between Connected Nodes */}
+              {edges.map((edge) => {
+                const sourceNode = nodes.find(n => n.id === edge.source);
+                const targetNode = nodes.find(n => n.id === edge.target);
+                
+                if (!sourceNode || !targetNode) return null;
+                
+                const midX = (sourceNode.position.x + targetNode.position.x) / 2 + 120;
+                const midY = (sourceNode.position.y + targetNode.position.y) / 2 + 40;
+                
+                return (
+                  <Panel key={`add-${edge.id}`} position="top-left" style={{ transform: `translate(${midX}px, ${midY}px)` }}>
+                    <button
+                      onClick={() => {
+                        setAddNodePosition({ x: midX - 120, y: midY - 40 });
+                        setShowNodeLibrary(true);
+                      }}
+                      className="w-8 h-8 bg-white border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center hover:border-indigo-500 hover:bg-indigo-50 transition-colors shadow-sm"
+                    >
+                      <Plus className="w-4 h-4 text-gray-600" />
+                    </button>
+                  </Panel>
+                );
+              })}
+            </ReactFlow>
+
+            {/* Floating Add Button */}
             <button
               onClick={() => setShowNodeLibrary(true)}
               className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center z-10"
             >
               <Plus className="w-6 h-6" />
             </button>
+          </div>
+
+          {/* Right Panel - Node Configuration */}
+          {isConfigPanelOpen && selectedNode && (
+            <NodeConfigPanel 
+              node={selectedNode}
+              onClose={() => setConfigPanelOpen(false)}
+            />
           )}
         </div>
-
-        {/* Right Panel - Node Configuration */}
-        {isConfigPanelOpen && selectedNode && (
-          <NodeConfigPanel 
-            node={selectedNode}
-            onClose={() => setConfigPanelOpen(false)}
-          />
-        )}
       </div>
 
       {/* Node Library Modal */}
