@@ -7,7 +7,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase environment variables not found. Please configure your .env file.');
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+// Create a mock client if environment variables are not set to prevent initialization errors
+export const supabase = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : createClient('https://placeholder.supabase.co', 'placeholder-key');
 
 // Database types
 export interface DatabaseCredential {
@@ -67,6 +70,9 @@ export interface UserPreferences {
 // Helper functions for database operations
 export const checkSupabaseConnection = async (): Promise<boolean> => {
   try {
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
+      return false;
+    }
     const { data, error } = await supabase.from('user_profiles').select('count').limit(1);
     return !error;
   } catch (error) {
@@ -76,6 +82,10 @@ export const checkSupabaseConnection = async (): Promise<boolean> => {
 
 export const createUserProfile = async (user: any): Promise<boolean> => {
   try {
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
+      console.warn('Supabase not configured properly');
+      return false;
+    }
     const { error } = await supabase.from('user_profiles').insert({
       id: user.id,
       email: user.email,
@@ -91,6 +101,10 @@ export const createUserProfile = async (user: any): Promise<boolean> => {
 
 export const getUserProfile = async (userId: string): Promise<DatabaseUser | null> => {
   try {
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
+      console.warn('Supabase not configured properly');
+      return null;
+    }
     const { data, error } = await supabase
       .from('user_profiles')
       .select('*')
@@ -114,6 +128,10 @@ export const updateUserProfile = async (
   updates: Partial<DatabaseUser>
 ): Promise<boolean> => {
   try {
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
+      console.warn('Supabase not configured properly');
+      return false;
+    }
     const { error } = await supabase
       .from('user_profiles')
       .update(updates)
@@ -128,6 +146,10 @@ export const updateUserProfile = async (
 
 export const getUserPreferences = async (userId: string): Promise<UserPreferences | null> => {
   try {
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
+      console.warn('Supabase not configured properly');
+      return null;
+    }
     const { data, error } = await supabase
       .from('user_preferences')
       .select('*')
@@ -151,6 +173,10 @@ export const updateUserPreferences = async (
   preferences: Partial<UserPreferences>
 ): Promise<boolean> => {
   try {
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) {
+      console.warn('Supabase not configured properly');
+      return false;
+    }
     const { error } = await supabase
       .from('user_preferences')
       .upsert({
