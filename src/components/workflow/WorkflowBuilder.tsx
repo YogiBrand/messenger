@@ -36,7 +36,9 @@ import {
   CheckCircle,
   AlertCircle,
   Pause,
-  RotateCcw
+  RotateCcw,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import CustomNode from './CustomNode';
@@ -71,6 +73,8 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     isConfigPanelOpen,
     updateWorkflow,
     addNode,
+    updateNode,
+    deleteNode,
     addEdge: addWorkflowEdge,
     setSelectedNode,
     setConfigPanelOpen,
@@ -86,30 +90,52 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   const [showSidebar, setShowSidebar] = useState(true);
   const [workflowStatus, setWorkflowStatus] = useState<'draft' | 'published' | 'testing'>('draft');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [isLocked, setIsLocked] = useState(true); // Default to locked (static positioning)
 
   const reactFlowInstance = useReactFlow();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
+  // Constants for perfect spacing (matching Paragon)
+  const NODE_WIDTH = 320;
+  const NODE_HEIGHT = 120;
+  const VERTICAL_SPACING = 80; // Space between nodes
+  const CANVAS_CENTER_X = 400;
+  const INITIAL_Y = 100;
+
+  // Calculate perfect vertical positions
+  const calculateNodePosition = (index: number) => ({
+    x: CANVAS_CENTER_X - NODE_WIDTH / 2,
+    y: INITIAL_Y + index * (NODE_HEIGHT + VERTICAL_SPACING)
+  });
+
   // Initialize nodes and edges from current workflow
   useEffect(() => {
     if (currentWorkflow) {
-      const flowNodes = currentWorkflow.nodes.map((node, index) => ({
-        id: node.id,
-        type: 'custom',
-        position: node.position,
-        data: {
-          ...node.data,
-          onConfigClick: () => {
-            setSelectedNode(node);
-            setConfigPanelOpen(true);
+      const flowNodes = currentWorkflow.nodes.map((node, index) => {
+        // Use calculated positions for perfect vertical alignment
+        const position = calculateNodePosition(index);
+        
+        return {
+          id: node.id,
+          type: 'custom',
+          position,
+          data: {
+            ...node.data,
+            onConfigClick: () => {
+              setSelectedNode(node);
+              setConfigPanelOpen(true);
+            },
+            onAddNodeBelow: (nodeId: string) => {
+              setAddNodeAfter(nodeId);
+              setShowNodeLibrary(true);
+            },
+            onDeleteNode: (nodeId: string) => {
+              handleDeleteNode(nodeId);
+            }
           },
-          onAddNodeBelow: (nodeId: string) => {
-            setAddNodeAfter(nodeId);
-            setShowNodeLibrary(true);
-          }
-        },
-        draggable: true
-      }));
+          draggable: !isLocked // Only draggable when unlocked
+        };
+      });
       
       // Create edges connecting nodes vertically
       const flowEdges: Edge[] = [];
@@ -131,10 +157,43 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       setWorkflowName(currentWorkflow.name);
       setWorkflowStatus(currentWorkflow.status as any);
     }
-  }, [currentWorkflow, setNodes, setEdges, setSelectedNode, setConfigPanelOpen]);
+  }, [currentWorkflow, isLocked, setNodes, setEdges, setSelectedNode, setConfigPanelOpen]);
+
+  // Update node draggability when lock state changes
+  useEffect(() => {
+    setNodes(prevNodes => 
+      prevNodes.map(node => ({
+        ...node,
+        draggable: !isLocked
+      }))
+    );
+  }, [isLocked, setNodes]);
+
+  const handleDeleteNode = (nodeId: string) => {
+    if (!currentWorkflow) return;
+
+    // Find the index of the node being deleted
+    const nodeIndex = currentWorkflow.nodes.findIndex(n => n.id === nodeId);
+    if (nodeIndex === -1) return;
+
+    // Delete the node from the store
+    deleteNode(nodeId);
+
+    // Recalculate positions for remaining nodes
+    const remainingNodes = currentWorkflow.nodes.filter(n => n.id !== nodeId);
+    remainingNodes.forEach((node, index) => {
+      const newPosition = calculateNodePosition(index);
+      updateNode(node.id, {
+        position: newPosition
+      });
+    });
+  };
 
   const onConnect = useCallback(
     (params: Connection) => {
+      // Prevent manual connections in locked mode
+      if (isLocked) return;
+      
       const newEdge = {
         ...params,
         ...edgeOptions
@@ -151,7 +210,7 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
         });
       }
     },
-    [setEdges, addWorkflowEdge]
+    [setEdges, addWorkflowEdge, isLocked]
   );
 
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
@@ -170,40 +229,18 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   const handleAddNode = (nodeTemplate: any) => {
     if (!currentWorkflow) return;
 
-    let newPosition = { x: 400, y: 100 };
+    let insertIndex = currentWorkflow.nodes.length; // Default to end
     
     if (addNodeAfter) {
-      // Find the node we're adding after
-      const afterNode = currentWorkflow.nodes.find(n => n.id === addNodeAfter);
-      if (afterNode) {
-        // Position the new node below the selected node
-        newPosition = { 
-          x: afterNode.position.x, 
-          y: afterNode.position.y + 150 
-        };
-        
-        // Shift all nodes below this position down
-        const nodesToShift = currentWorkflow.nodes.filter(n => 
-          n.position.y > afterNode.position.y && n.position.x === afterNode.position.x
-        );
-        
-        nodesToShift.forEach(node => {
-          const updatedNode = {
-            ...node,
-            position: { ...node.position, y: node.position.y + 150 }
-          };
-          // Update the node position in the store
-          // This would need to be implemented in the store
-        });
+      // Find the index of the node we're adding after
+      const afterNodeIndex = currentWorkflow.nodes.findIndex(n => n.id === addNodeAfter);
+      if (afterNodeIndex !== -1) {
+        insertIndex = afterNodeIndex + 1;
       }
-    } else if (currentWorkflow.nodes.length === 0) {
-      // First node
-      newPosition = { x: 400, y: 100 };
-    } else {
-      // Add at the end
-      const lastNode = currentWorkflow.nodes[currentWorkflow.nodes.length - 1];
-      newPosition = { x: lastNode.position.x, y: lastNode.position.y + 150 };
     }
+
+    // Calculate position for the new node
+    const newPosition = calculateNodePosition(insertIndex);
 
     const newNode = {
       type: nodeTemplate.type,
@@ -220,7 +257,19 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       }
     };
 
+    // Add the new node
     addNode(newNode);
+
+    // If inserting in the middle, update positions of nodes that come after
+    if (insertIndex < currentWorkflow.nodes.length) {
+      currentWorkflow.nodes.slice(insertIndex).forEach((node, relativeIndex) => {
+        const newPos = calculateNodePosition(insertIndex + 1 + relativeIndex);
+        updateNode(node.id, {
+          position: newPos
+        });
+      });
+    }
+
     setShowNodeLibrary(false);
     setAddNodeAfter(null);
   };
@@ -262,6 +311,10 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     if (currentWorkflow) {
       updateWorkflow(currentWorkflow.id, { name: workflowName });
     }
+  };
+
+  const toggleLock = () => {
+    setIsLocked(!isLocked);
   };
 
   const getStatusColor = () => {
@@ -374,6 +427,20 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Lock/Unlock Toggle */}
+            <button
+              onClick={toggleLock}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+                isLocked 
+                  ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' 
+                  : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+              }`}
+              title={isLocked ? 'Unlock to move nodes' : 'Lock nodes in place'}
+            >
+              {isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+              {isLocked ? 'Locked' : 'Unlocked'}
+            </button>
+            
             <button 
               onClick={handleTest}
               disabled={workflowStatus === 'testing'}
@@ -422,9 +489,13 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
               snapToGrid={true}
               snapGrid={[20, 20]}
               deleteKeyCode={['Backspace', 'Delete']}
-              nodesDraggable={true}
-              nodesConnectable={false} // Disable manual connections since we use vertical flow
+              nodesDraggable={!isLocked}
+              nodesConnectable={!isLocked} // Only allow connections when unlocked
               elementsSelectable={true}
+              panOnDrag={true}
+              zoomOnScroll={true}
+              zoomOnPinch={true}
+              zoomOnDoubleClick={false}
             >
               <Background 
                 color="#e5e7eb" 
@@ -478,6 +549,16 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
                   >
                     <Plus className="w-4 h-4 text-gray-600" />
                   </button>
+                </Panel>
+              )}
+
+              {/* Lock Status Indicator */}
+              {!isLocked && (
+                <Panel position="top-left" className="mt-4 ml-4">
+                  <div className="bg-yellow-100 border border-yellow-300 rounded-lg px-3 py-2 flex items-center gap-2 text-yellow-800 text-sm">
+                    <Unlock className="w-4 h-4" />
+                    <span>Nodes unlocked - you can move them around</span>
+                  </div>
                 </Panel>
               )}
             </ReactFlow>

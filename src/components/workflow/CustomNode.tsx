@@ -35,7 +35,11 @@ const CustomNode: React.FC<NodeProps> = ({ id, data, selected }) => {
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteNode(id);
+    if (data.onDeleteNode) {
+      data.onDeleteNode(id);
+    } else {
+      deleteNode(id);
+    }
     setShowMenu(false);
   };
 
@@ -136,16 +140,17 @@ const CustomNode: React.FC<NodeProps> = ({ id, data, selected }) => {
         />
       )}
 
-      {/* Node Body */}
+      {/* Node Body - Fixed width for consistent spacing */}
       <div
         onClick={handleClick}
         className={`
-          bg-white border-2 rounded-xl shadow-sm min-w-[280px] cursor-pointer transition-all relative
+          bg-white border-2 rounded-xl shadow-sm cursor-pointer transition-all relative
           ${selected 
             ? 'border-indigo-500 shadow-lg ring-2 ring-indigo-200' 
             : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
           }
         `}
+        style={{ width: '320px', minHeight: '120px' }} // Fixed dimensions for perfect spacing
       >
         {/* Delete Button - Top Right Corner */}
         <button
@@ -302,7 +307,7 @@ const CustomNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       />
 
       {/* Add Node Button - Below this node */}
-      <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity" style={{ top: '100%', marginTop: '20px' }}>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -316,6 +321,35 @@ const CustomNode: React.FC<NodeProps> = ({ id, data, selected }) => {
           <Plus className="w-3 h-3 text-gray-600" />
         </button>
       </div>
+
+      {/* Conditional Branches - Only for conditional nodes */}
+      {isConditionalNode && (
+        <>
+          {/* Yes Branch Handle */}
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="yes"
+            className="w-3 h-3 bg-green-500 border-2 border-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ right: -6, top: '40%' }}
+          />
+          
+          {/* No Branch Handle */}
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="no"
+            className="w-3 h-3 bg-red-500 border-2 border-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ right: -6, top: '60%' }}
+          />
+
+          {/* Branch Labels */}
+          <div className="absolute right-2 top-1/2 transform -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="text-xs text-green-600 font-medium mb-1">Yes</div>
+            <div className="text-xs text-red-600 font-medium">No</div>
+          </div>
+        </>
+      )}
     </div>
   );
 };
