@@ -38,7 +38,8 @@ import {
   Pause,
   RotateCcw,
   Lock,
-  Unlock
+  Unlock,
+  Sparkles
 } from 'lucide-react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import CustomNode from './CustomNode';
@@ -91,14 +92,15 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   const [workflowStatus, setWorkflowStatus] = useState<'draft' | 'published' | 'testing'>('draft');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isLocked, setIsLocked] = useState(true); // Default to locked (static positioning)
+  const [savedViewport, setSavedViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
 
   const reactFlowInstance = useReactFlow();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
-  // Constants for perfect spacing (matching Paragon)
+  // Constants for perfect spacing (matching Paragon screenshot)
   const NODE_WIDTH = 320;
   const NODE_HEIGHT = 120;
-  const VERTICAL_SPACING = 80; // Space between nodes
+  const VERTICAL_SPACING = 200; // Much larger spacing to match Paragon
   const CANVAS_CENTER_X = 400;
   const INITIAL_Y = 100;
 
@@ -107,6 +109,20 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     x: CANVAS_CENTER_X - NODE_WIDTH / 2,
     y: INITIAL_Y + index * (NODE_HEIGHT + VERTICAL_SPACING)
   });
+
+  // Auto-fit view to show all nodes with proper spacing
+  const autoFitView = useCallback(() => {
+    if (reactFlowInstance && nodes.length > 0) {
+      setTimeout(() => {
+        reactFlowInstance.fitView({
+          padding: 0.2,
+          minZoom: 0.4,
+          maxZoom: 1.2,
+          duration: 800
+        });
+      }, 100);
+    }
+  }, [reactFlowInstance, nodes.length]);
 
   // Initialize nodes and edges from current workflow
   useEffect(() => {
@@ -156,18 +172,28 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       setEdges(flowEdges);
       setWorkflowName(currentWorkflow.name);
       setWorkflowStatus(currentWorkflow.status as any);
+
+      // Auto-fit view when nodes are loaded
+      if (flowNodes.length > 0) {
+        autoFitView();
+      }
     }
-  }, [currentWorkflow, isLocked, setNodes, setEdges, setSelectedNode, setConfigPanelOpen]);
+  }, [currentWorkflow, isLocked, setNodes, setEdges, setSelectedNode, setConfigPanelOpen, autoFitView]);
 
   // Update node draggability when lock state changes
   useEffect(() => {
+    if (isLocked && savedViewport) {
+      // Restore saved viewport when locking
+      reactFlowInstance.setViewport(savedViewport, { duration: 300 });
+    }
+    
     setNodes(prevNodes => 
       prevNodes.map(node => ({
         ...node,
         draggable: !isLocked
       }))
     );
-  }, [isLocked, setNodes]);
+  }, [isLocked, setNodes, reactFlowInstance, savedViewport]);
 
   const handleDeleteNode = (nodeId: string) => {
     if (!currentWorkflow) return;
@@ -187,6 +213,11 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
         position: newPosition
       });
     });
+
+    // Auto-fit view after deletion
+    setTimeout(() => {
+      autoFitView();
+    }, 100);
   };
 
   const onConnect = useCallback(
@@ -272,6 +303,11 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
 
     setShowNodeLibrary(false);
     setAddNodeAfter(null);
+
+    // Auto-fit view after adding node
+    setTimeout(() => {
+      autoFitView();
+    }, 100);
   };
 
   const handleSave = () => {
@@ -314,7 +350,29 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   };
 
   const toggleLock = () => {
+    if (!isLocked) {
+      // Save current viewport before locking
+      const viewport = reactFlowInstance.getViewport();
+      setSavedViewport(viewport);
+    }
     setIsLocked(!isLocked);
+  };
+
+  const handleCleanup = () => {
+    if (!currentWorkflow) return;
+
+    // Reposition all nodes with perfect spacing
+    currentWorkflow.nodes.forEach((node, index) => {
+      const newPosition = calculateNodePosition(index);
+      updateNode(node.id, {
+        position: newPosition
+      });
+    });
+
+    // Auto-fit view after cleanup
+    setTimeout(() => {
+      autoFitView();
+    }, 100);
   };
 
   const getStatusColor = () => {
@@ -440,6 +498,16 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
               {isLocked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
               {isLocked ? 'Locked' : 'Unlocked'}
             </button>
+
+            {/* Cleanup Button */}
+            <button
+              onClick={handleCleanup}
+              className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors text-sm font-medium"
+              title="Clean up and organize workflow"
+            >
+              <Sparkles className="w-4 h-4" />
+              Clean Up
+            </button>
             
             <button 
               onClick={handleTest}
@@ -481,11 +549,11 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
               onPaneClick={onPaneClick}
               nodeTypes={nodeTypes}
               connectionMode={ConnectionMode.Loose}
-              fitView
+              fitView={false}
               className="bg-gray-50"
-              defaultViewport={{ x: 0, y: 0, zoom: 1 }}
-              minZoom={0.3}
-              maxZoom={2}
+              defaultViewport={{ x: 0, y: 0, zoom: 0.6 }} // Better initial zoom
+              minZoom={0.2}
+              maxZoom={1.5}
               snapToGrid={true}
               snapGrid={[20, 20]}
               deleteKeyCode={['Backspace', 'Delete']}
