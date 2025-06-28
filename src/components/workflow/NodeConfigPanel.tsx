@@ -196,16 +196,16 @@ const NodeConfigPanel: React.FC<NodeConfigPanelProps> = ({ node, onClose }) => {
           rows={4}
         />
         <p className="text-xs text-gray-500 mt-2">
-          Use JavaScript expressions with variables in double braces. Example: {{`{{email}}.includes('@gmail.com')`}}
+          Use JavaScript expressions with variables in double braces. Example: {`{{email}}.includes('@gmail.com')`}
         </p>
       </div>
       
       <div className="bg-gray-50 rounded-lg p-4">
         <h5 className="text-sm font-medium text-gray-900 mb-2">Available Variables</h5>
         <div className="space-y-1 text-xs text-gray-600">
-          <div><code className="bg-white px-1 rounded">{{`{{email}}`}}</code> - User email address</div>
-          <div><code className="bg-white px-1 rounded">{{`{{name}}`}}</code> - User full name</div>
-          <div><code className="bg-white px-1 rounded">{{`{{userId}}`}}</code> - User ID</div>
+          <div><code className="bg-white px-1 rounded">{`{{email}}`}</code> - User email address</div>
+          <div><code className="bg-white px-1 rounded">{`{{name}}`}</code> - User full name</div>
+          <div><code className="bg-white px-1 rounded">{`{{userId}}`}</code> - User ID</div>
         </div>
       </div>
     </div>
