@@ -23,28 +23,12 @@ import {
   Building2,
   MoreHorizontal,
   Eye,
-  Pencil,
-  Play,
-  Pause,
-  RotateCcw,
-  Save,
-  Trash2,
-  GitBranch,
-  Workflow,
-  Zap as ZapIcon,
-  Database,
-  Code,
-  Timer,
-  ArrowRight,
-  ArrowDown,
-  Circle,
-  Square,
-  Diamond,
-  Triangle
+  Pencil
 } from 'lucide-react';
 import { User, Workspace } from '../types/auth';
-import { providerConfig, getProviderByKey } from '../lib/providerConfig';
-import { useIntegrationStore } from '../store/integrationStore';
+import IntegrationsDashboard from './IntegrationsDashboard';
+import WorkflowBuilder from './workflow/WorkflowBuilder';
+import { useWorkflowStore } from '../store/workflowStore';
 
 interface ParagonLayoutProps {
   currentUser: User;
@@ -67,9 +51,9 @@ const ParagonLayout: React.FC<ParagonLayoutProps> = ({
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
   const [showIntegrationDetail, setShowIntegrationDetail] = useState(false);
-  const [currentIntegrationId, setCurrentIntegrationId] = useState<string | null>(null);
+  const [showWorkflowBuilder, setShowWorkflowBuilder] = useState(false);
 
-  const { isConnected, connectPlatform } = useIntegrationStore();
+  const { createWorkflow } = useWorkflowStore();
 
   const sidebarItems = [
     { id: 'integrations', label: 'Integrations', icon: Zap, active: true },
@@ -84,24 +68,22 @@ const ParagonLayout: React.FC<ParagonLayoutProps> = ({
 
   const handleIntegrationClick = (integration: any) => {
     setSelectedIntegration(integration);
-    setCurrentIntegrationId(integration.key);
     setShowIntegrationDetail(true);
   };
 
-  const handleConnectClick = (integration: any) => {
-    // For Pinterest, automatically "connect" it for demo purposes
-    if (integration.key === 'pinterest') {
-      connectPlatform('pinterest', {
-        accessToken: 'demo_pinterest_token',
-        connectedAt: new Date().toISOString(),
-        credentialType: 'oauth'
-      });
-    }
-    
-    setSelectedIntegration(integration);
-    setCurrentIntegrationId(integration.key);
-    setShowIntegrationDetail(true);
+  const handleCreateWorkflow = () => {
+    const workflow = createWorkflow('New Workflow', selectedIntegration?.name?.toLowerCase());
+    setShowWorkflowBuilder(true);
   };
+
+  const handleBackFromWorkflow = () => {
+    setShowWorkflowBuilder(false);
+  };
+
+  // Show workflow builder if active
+  if (showWorkflowBuilder) {
+    return <WorkflowBuilder onBack={handleBackFromWorkflow} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -277,7 +259,7 @@ const ParagonLayout: React.FC<ParagonLayoutProps> = ({
               onIntegrationClick={handleIntegrationClick}
             />
           )}
-          {activeTab === 'catalog' && !showIntegrationDetail && (
+          {activeTab === 'catalog' && (
             <CatalogView 
               onSelectIntegration={(integration) => {
                 setSelectedIntegration(integration);
@@ -285,40 +267,19 @@ const ParagonLayout: React.FC<ParagonLayoutProps> = ({
               }} 
             />
           )}
-          {activeTab === 'task-history' && !showIntegrationDetail && <TaskHistoryView />}
-          {activeTab === 'settings' && !showIntegrationDetail && <SettingsView currentUser={currentUser} />}
-          {activeTab === 'app-events' && !showIntegrationDetail && <AppEventsView />}
-          {activeTab === 'resources' && !showIntegrationDetail && <ResourcesView />}
-          {activeTab === 'connected-users' && !showIntegrationDetail && <ConnectedUsersView />}
-          {activeTab === 'releases' && !showIntegrationDetail && <ReleasesView />}
-          
-          {/* Integration Detail View - Full Page */}
           {showIntegrationDetail && selectedIntegration && (
             <IntegrationDetailView
               integration={selectedIntegration}
-              onClose={() => {
-                setShowIntegrationDetail(false);
-                setSelectedIntegration(null);
-                setCurrentIntegrationId(null);
-              }}
-              onCreateWorkflow={(integrationKey) => {
-                setShowIntegrationDetail(false);
-                setActiveTab('workflow-builder');
-                setCurrentIntegrationId(integrationKey);
-              }}
+              onBack={() => setShowIntegrationDetail(false)}
+              onCreateWorkflow={handleCreateWorkflow}
             />
           )}
-
-          {/* Workflow Builder */}
-          {activeTab === 'workflow-builder' && (
-            <WorkflowBuilderView 
-              integrationId={currentIntegrationId}
-              onBack={() => {
-                setActiveTab('integrations');
-                setCurrentIntegrationId(null);
-              }}
-            />
-          )}
+          {activeTab === 'task-history' && <TaskHistoryView />}
+          {activeTab === 'settings' && <SettingsView currentUser={currentUser} />}
+          {activeTab === 'app-events' && <AppEventsView />}
+          {activeTab === 'resources' && <ResourcesView />}
+          {activeTab === 'connected-users' && <ConnectedUsersView />}
+          {activeTab === 'releases' && <ReleasesView />}
         </div>
       </div>
 
@@ -332,12 +293,167 @@ const ParagonLayout: React.FC<ParagonLayoutProps> = ({
               setSelectedIntegration(null);
             }}
             onConnect={() => {
-              handleConnectClick(selectedIntegration);
               setShowIntegrationDrawer(false);
+              setShowIntegrationDetail(true);
             }}
           />
         )}
       </AnimatePresence>
+    </div>
+  );
+};
+
+// Integration Detail View - Full page view matching Paragon
+const IntegrationDetailView: React.FC<{ 
+  integration: any; 
+  onBack: () => void;
+  onCreateWorkflow: () => void;
+}> = ({ integration, onBack, onCreateWorkflow }) => {
+  return (
+    <div className="max-w-6xl mx-auto">
+      {/* Back Navigation */}
+      <div className="mb-6">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+        >
+          <ChevronRight className="w-4 h-4 rotate-180" />
+          <span className="text-sm">Back to Integrations</span>
+        </button>
+      </div>
+
+      {/* NEW Badge */}
+      <div className="mb-6">
+        <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+          NEW
+          <span className="text-blue-600">This page has a new look!</span>
+          <a href="#" className="text-blue-600 underline">Learn more</a>
+        </div>
+      </div>
+
+      {/* App Configuration Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">App Configuration</h2>
+            <p className="text-gray-600 text-sm">Set up the {integration.name} OAuth app that will be used to authorize your users.</p>
+          </div>
+          <button className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
+            Add your own keys
+          </button>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+            <span className="text-purple-600 text-lg">💬</span>
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+              <span className="text-sm font-medium text-gray-900">Configure</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className="bg-purple-600 h-2 rounded-full w-1/3"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Connect Portal Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Connect Portal</h3>
+            <p className="text-gray-600 text-sm">Customize the embedded view that appears to your end user to integrate {integration.name}.</p>
+          </div>
+          <button className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
+            Connect a test account
+          </button>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="w-20 h-12 bg-purple-600 rounded-lg flex items-center justify-center">
+            <div className="w-16 h-8 bg-purple-700 rounded flex items-center justify-center">
+              <span className="text-white text-xs">💬</span>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+              Test Connect Portal
+            </button>
+            <button className="px-4 py-2 text-indigo-600 hover:text-indigo-700 text-sm font-medium">
+              Customize
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ActionKit Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-indigo-600 rounded flex items-center justify-center">
+            <span className="text-white text-xs">✨</span>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">ActionKit</h3>
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">NEW</span>
+            </div>
+            <p className="text-gray-600 text-sm">Equip your AI agent to autonomously use {integration.name} Actions on behalf of your users.</p>
+          </div>
+        </div>
+
+        <div className="bg-gray-50 rounded-lg p-4 mb-4">
+          <h4 className="font-medium text-gray-900 mb-2">ActionKit for {integration.name}</h4>
+          <p className="text-gray-600 text-sm mb-3">Send message in channel, Send direct message and 3 more actions available</p>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Eye className="w-4 h-4" />
+              <span>Direct Message</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <Pencil className="w-4 h-4" />
+              <span>Get User By Email</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span>Get Users By Name in {integration.name}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span>Search</span>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            <button className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
+              Open Docs
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Not Enabled</span>
+              <div className="w-8 h-4 bg-gray-200 rounded-full"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Workflows Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Workflows</h3>
+            <p className="text-gray-600 text-sm">Build asynchronous, event-based automations for your {integration.name} users.</p>
+          </div>
+          <button 
+            onClick={onCreateWorkflow}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+          >
+            + Create Workflow
+          </button>
+        </div>
+
+        <div className="text-center py-12">
+          <h4 className="text-lg font-medium text-gray-900 mb-2">No workflows found</h4>
+          <p className="text-gray-600 text-sm mb-4">Click Create Workflow to start building your first workflow.</p>
+        </div>
+      </div>
     </div>
   );
 };
@@ -347,17 +463,14 @@ const IntegrationsView: React.FC<{
   onNewIntegration: () => void;
   onIntegrationClick: (integration: any) => void;
 }> = ({ onNewIntegration, onIntegrationClick }) => {
-  const { isConnected } = useIntegrationStore();
-  
   const connectedIntegrations = [
     {
-      name: 'Pinterest',
-      description: 'Connect to your users\' Pinterest accounts',
-      icon: '📌',
-      users: isConnected('pinterest') ? 1 : 0,
-      status: isConnected('pinterest') ? 'active' : 'inactive',
-      hasWarning: !isConnected('pinterest'),
-      key: 'pinterest'
+      name: 'Asana',
+      description: 'Connect to your users\' Asana accounts',
+      icon: '🔴',
+      users: 0,
+      status: 'inactive',
+      hasWarning: true
     },
     {
       name: 'Google Analytics',
@@ -365,8 +478,7 @@ const IntegrationsView: React.FC<{
       icon: '📊',
       users: 0,
       status: 'inactive',
-      hasWarning: true,
-      key: 'google-analytics'
+      hasWarning: true
     },
     {
       name: 'Mailchimp',
@@ -374,8 +486,7 @@ const IntegrationsView: React.FC<{
       icon: '🐵',
       users: 0,
       status: 'inactive',
-      hasWarning: true,
-      key: 'mailchimp'
+      hasWarning: true
     }
   ];
 
@@ -418,8 +529,8 @@ const IntegrationsView: React.FC<{
                 <div className="text-right">
                   <div className="text-sm font-medium text-gray-900">{integration.users} connected users</div>
                   <div className="text-xs text-gray-500 flex items-center gap-1">
-                    <div className={`w-2 h-2 rounded-full ${integration.status === 'active' ? 'bg-green-400' : 'bg-gray-400'}`}></div>
-                    {integration.status === 'active' ? 'Active' : 'Inactive'}
+                    <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                    Inactive
                   </div>
                 </div>
                 <MoreHorizontal className="w-5 h-5 text-gray-400" />
@@ -432,196 +543,12 @@ const IntegrationsView: React.FC<{
   );
 };
 
-// Integration Detail View - Full Page Implementation
-const IntegrationDetailView: React.FC<{ 
-  integration: any; 
-  onClose: () => void;
-  onCreateWorkflow: (integrationKey: string) => void;
-}> = ({ integration, onClose, onCreateWorkflow }) => {
-  const { isConnected } = useIntegrationStore();
-  const connected = isConnected(integration.key);
-  
-  return (
-    <div className="h-full bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 bg-purple-600 rounded flex items-center justify-center">
-                <span className="text-white text-sm">📌</span>
-              </div>
-              <h1 className="text-lg font-semibold text-gray-900">{integration.name}</h1>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button className="text-gray-400 hover:text-gray-600">
-              <MoreHorizontal className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-gray-400'}`}></div>
-              {connected ? 'Active' : 'Inactive'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="p-6 max-w-6xl mx-auto">
-        {/* NEW Badge */}
-        <div className="mb-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-            NEW
-            <span className="text-blue-600">This page has a new look!</span>
-            <a href="#" className="text-blue-600 underline">Learn more</a>
-          </div>
-        </div>
-
-        {/* App Configuration Section */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">App Configuration</h2>
-              <p className="text-gray-600 text-sm">Set up the {integration.name} OAuth app that will be used to authorize your users.</p>
-            </div>
-            <button className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
-              Add your own keys
-            </button>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <span className="text-purple-600 text-lg">📌</span>
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <div className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                <span className="text-sm font-medium text-gray-900">
-                  {connected ? 'Connected' : 'Configure'}
-                </span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
-                <div className={`bg-purple-600 h-2 rounded-full ${connected ? 'w-full' : 'w-1/3'}`}></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Connect Portal Section */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Connect Portal</h3>
-              <p className="text-gray-600 text-sm">Customize the embedded view that appears to your end user to integrate {integration.name}.</p>
-            </div>
-            <button className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
-              Connect a test account
-            </button>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="w-20 h-12 bg-purple-600 rounded-lg flex items-center justify-center">
-              <div className="w-16 h-8 bg-purple-700 rounded flex items-center justify-center">
-                <span className="text-white text-xs">📌</span>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
-                Test Connect Portal
-              </button>
-              <button className="px-4 py-2 text-indigo-600 hover:text-indigo-700 text-sm font-medium">
-                Customize
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ActionKit Section */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-indigo-600 rounded flex items-center justify-center">
-              <span className="text-white text-xs">✨</span>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-semibold text-gray-900">ActionKit</h3>
-                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">NEW</span>
-              </div>
-              <p className="text-gray-600 text-sm">Equip your AI agent to autonomously use {integration.name} Actions on behalf of your users.</p>
-            </div>
-          </div>
-
-          <div className="bg-gray-50 rounded-lg p-4 mb-4">
-            <h4 className="font-medium text-gray-900 mb-2">ActionKit for {integration.name}</h4>
-            <p className="text-gray-600 text-sm mb-3">Create pin, Get boards, Search pins and 3 more actions available</p>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Eye className="w-4 h-4" />
-                <span>Create Pin</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <Pencil className="w-4 h-4" />
-                <span>Get Boards</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <span>Search Pins</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <span>Get User Profile</span>
-              </div>
-            </div>
-            <div className="mt-3 flex items-center justify-between">
-              <button className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">
-                Open Docs
-              </button>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Not Enabled</span>
-                <div className="w-8 h-4 bg-gray-200 rounded-full"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Workflows Section */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Workflows</h3>
-              <p className="text-gray-600 text-sm">Build asynchronous, event-based automations for your {integration.name} users.</p>
-            </div>
-            <button 
-              onClick={() => onCreateWorkflow(integration.key)}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-            >
-              + Create Workflow
-            </button>
-          </div>
-
-          <div className="text-center py-12">
-            <h4 className="text-lg font-medium text-gray-900 mb-2">No workflows found</h4>
-            <p className="text-gray-600 text-sm mb-4">Click Create Workflow to start building your first workflow.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Integration Drawer Component - Fixed button text
+// Integration Drawer Component - Exact Paragon styling
 const IntegrationDrawer: React.FC<{ 
   integration: any; 
   onClose: () => void;
   onConnect: () => void;
 }> = ({ integration, onClose, onConnect }) => {
-  const { isConnected } = useIntegrationStore();
-  const connected = isConnected(integration.key);
-
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -644,7 +571,7 @@ const IntegrationDrawer: React.FC<{
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-lg">📌</span>
+                  <span className="text-white text-lg">💬</span>
                 </div>
                 <h2 className="text-lg font-semibold">{integration.name}</h2>
               </div>
@@ -656,7 +583,7 @@ const IntegrationDrawer: React.FC<{
               </button>
             </div>
             <p className="text-purple-100 text-sm">
-              Connect to your users' {integration.name} accounts
+              Connect to your users' {integration.name} workspaces
             </p>
           </div>
 
@@ -666,26 +593,25 @@ const IntegrationDrawer: React.FC<{
               onClick={onConnect}
               className="w-full py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium"
             >
-              {connected ? 'Manage' : 'Connect'}
+              Connect
             </button>
 
             <div>
               <p className="text-gray-600 text-sm leading-relaxed mb-4">
-                Connect to your users' {integration.name} accounts to create pins and manage boards on their behalf.
+                Connect to your users' {integration.name} workspaces to send them messages and notifications in {integration.name}.
               </p>
               <p className="text-gray-600 text-sm leading-relaxed">
-                Paragon enables you to increase customer engagement by creating pins from your app to your users' {integration.name} boards, for example:
+                Paragon enables you to increase customer engagement by sending messages from your app to your users' {integration.name} workspace, for example:
               </p>
               <ul className="mt-3 space-y-1 text-gray-600 text-sm">
-                <li>• Create pins automatically from your app's content</li>
-                <li>• Manage boards and organize pins programmatically</li>
-                <li>• Search and discover relevant pins for your users</li>
+                <li>• Create a {integration.name} channel in your users' workspaces for your app's notifications (e.g. #your-app-name)</li>
+                <li>• Engage your users by sending {integration.name} messages to notify them of important activity in your app</li>
               </ul>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="px-2 py-1 bg-pink-100 text-pink-700 text-xs rounded-full font-medium">
-                Social Media
+              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                Team Communication
               </span>
             </div>
 
@@ -717,312 +643,6 @@ const IntegrationDrawer: React.FC<{
         </div>
       </motion.div>
     </motion.div>
-  );
-};
-
-// Workflow Builder Component - Complete Paragon Implementation
-const WorkflowBuilderView: React.FC<{
-  integrationId: string | null;
-  onBack: () => void;
-}> = ({ integrationId, onBack }) => {
-  const [selectedNode, setSelectedNode] = useState<any>(null);
-  const [workflowName, setWorkflowName] = useState('New Workflow');
-  const [isRunning, setIsRunning] = useState(false);
-  const [nodes, setNodes] = useState([
-    {
-      id: '1',
-      type: 'trigger',
-      position: { x: 100, y: 100 },
-      data: { 
-        label: 'Trigger',
-        config: {
-          type: 'webhook',
-          name: 'Webhook Received'
-        }
-      }
-    }
-  ]);
-  const [edges, setEdges] = useState([]);
-
-  const nodeTypes = [
-    { type: 'trigger', label: 'Trigger', icon: Zap, color: 'bg-green-500' },
-    { type: 'action', label: 'Action', icon: Play, color: 'bg-blue-500' },
-    { type: 'condition', label: 'Condition', icon: GitBranch, color: 'bg-yellow-500' },
-    { type: 'delay', label: 'Delay', icon: Timer, color: 'bg-purple-500' },
-    { type: 'fanout', label: 'Fan Out', icon: ArrowRight, color: 'bg-indigo-500' },
-    { type: 'response', label: 'Response', icon: ArrowDown, color: 'bg-gray-500' }
-  ];
-
-  const recentRuns = [
-    { id: '1', status: 'success', timestamp: '2 minutes ago', duration: '1.2s' },
-    { id: '2', status: 'failed', timestamp: '5 minutes ago', duration: '0.8s' },
-    { id: '3', status: 'success', timestamp: '10 minutes ago', duration: '2.1s' }
-  ];
-
-  const addNode = (type: string) => {
-    const newNode = {
-      id: Date.now().toString(),
-      type,
-      position: { x: Math.random() * 400 + 200, y: Math.random() * 300 + 200 },
-      data: {
-        label: type.charAt(0).toUpperCase() + type.slice(1),
-        config: {}
-      }
-    };
-    setNodes([...nodes, newNode]);
-  };
-
-  const runWorkflow = () => {
-    setIsRunning(true);
-    setTimeout(() => setIsRunning(false), 3000);
-  };
-
-  return (
-    <div className="h-full bg-white flex">
-      {/* Main Canvas Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Workflow Header */}
-        <div className="border-b border-gray-200 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={onBack}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-              <input
-                type="text"
-                value={workflowName}
-                onChange={(e) => setWorkflowName(e.target.value)}
-                className="text-lg font-semibold text-gray-900 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded px-2"
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={runWorkflow}
-                disabled={isRunning}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isRunning 
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-green-600 text-white hover:bg-green-700'
-                }`}
-              >
-                {isRunning ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin inline-block mr-2" />
-                    Running...
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 inline-block mr-2" />
-                    Test Run
-                  </>
-                )}
-              </button>
-              <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium">
-                <Save className="w-4 h-4 inline-block mr-2" />
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Canvas */}
-        <div className="flex-1 relative bg-gray-50 overflow-hidden">
-          {/* Grid Background */}
-          <div className="absolute inset-0 opacity-20">
-            <svg width="100%" height="100%">
-              <defs>
-                <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                  <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e5e7eb" strokeWidth="1"/>
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#grid)" />
-            </svg>
-          </div>
-
-          {/* Nodes */}
-          {nodes.map((node) => (
-            <div
-              key={node.id}
-              className={`absolute bg-white border-2 rounded-lg p-4 cursor-pointer shadow-sm hover:shadow-md transition-shadow ${
-                selectedNode?.id === node.id ? 'border-indigo-500' : 'border-gray-200'
-              }`}
-              style={{
-                left: node.position.x,
-                top: node.position.y,
-                width: '200px'
-              }}
-              onClick={() => setSelectedNode(node)}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white ${
-                  nodeTypes.find(t => t.type === node.type)?.color || 'bg-gray-500'
-                }`}>
-                  {React.createElement(nodeTypes.find(t => t.type === node.type)?.icon || Circle, { className: 'w-4 h-4' })}
-                </div>
-                <div>
-                  <div className="font-medium text-gray-900">{node.data.label}</div>
-                  <div className="text-xs text-gray-500">{node.type}</div>
-                </div>
-              </div>
-              {node.data.config?.name && (
-                <div className="mt-2 text-sm text-gray-600">{node.data.config.name}</div>
-              )}
-            </div>
-          ))}
-
-          {/* Add Node Floating Button */}
-          <div className="absolute bottom-6 left-6">
-            <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-2">
-              <div className="grid grid-cols-3 gap-2">
-                {nodeTypes.map((nodeType) => (
-                  <button
-                    key={nodeType.type}
-                    onClick={() => addNode(nodeType.type)}
-                    className={`w-12 h-12 rounded-lg flex items-center justify-center text-white hover:scale-105 transition-transform ${nodeType.color}`}
-                    title={nodeType.label}
-                  >
-                    <nodeType.icon className="w-5 h-5" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Right Sidebar */}
-      <div className="w-80 border-l border-gray-200 bg-white flex flex-col">
-        {/* Tabs */}
-        <div className="border-b border-gray-200">
-          <div className="flex">
-            <button className="flex-1 px-4 py-3 text-sm font-medium text-indigo-600 border-b-2 border-indigo-600">
-              Configure
-            </button>
-            <button className="flex-1 px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700">
-              Recent Runs
-            </button>
-          </div>
-        </div>
-
-        {/* Configuration Panel */}
-        <div className="flex-1 p-4 overflow-y-auto">
-          {selectedNode ? (
-            <div className="space-y-4">
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2">
-                  {selectedNode.data.label} Configuration
-                </h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Configure the settings for this {selectedNode.type} node.
-                </p>
-              </div>
-
-              {selectedNode.type === 'trigger' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Trigger Type
-                    </label>
-                    <select className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                      <option>Webhook</option>
-                      <option>Schedule</option>
-                      <option>Integration Event</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Name
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                      placeholder="Enter trigger name"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedNode.type === 'action' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Integration
-                    </label>
-                    <select className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                      <option>Pinterest</option>
-                      <option>Google Analytics</option>
-                      <option>Mailchimp</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Action
-                    </label>
-                    <select className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                      <option>Create Pin</option>
-                      <option>Get Boards</option>
-                      <option>Search Pins</option>
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {selectedNode.type === 'condition' && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Condition
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                      placeholder="e.g., data.status === 'active'"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="pt-4 border-t border-gray-200">
-                <button className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium">
-                  Update Configuration
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <Settings className="w-8 h-8 text-gray-400" />
-              </div>
-              <h3 className="font-medium text-gray-900 mb-2">No node selected</h3>
-              <p className="text-sm text-gray-600">
-                Click on a node to configure its settings.
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Recent Runs */}
-        <div className="border-t border-gray-200 p-4">
-          <h4 className="font-medium text-gray-900 mb-3">Recent Runs</h4>
-          <div className="space-y-2">
-            {recentRuns.map((run) => (
-              <div key={run.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${
-                    run.status === 'success' ? 'bg-green-500' : 'bg-red-500'
-                  }`}></div>
-                  <span className="text-sm text-gray-600">{run.timestamp}</span>
-                </div>
-                <span className="text-xs text-gray-500">{run.duration}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
   );
 };
 
@@ -1183,7 +803,7 @@ const CatalogView: React.FC<{ onSelectIntegration: (integration: any) => void }>
   );
 };
 
-// Additional View Components
+// Task History View Component
 const TaskHistoryView: React.FC = () => {
   const [activeTab, setActiveTab] = useState('workflows');
 
