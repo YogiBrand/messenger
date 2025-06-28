@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import ReactFlow, {
   Node,
   Edge,
@@ -11,13 +11,13 @@ import ReactFlow, {
   MiniMap,
   Panel,
   ReactFlowProvider,
-  useReactFlow
+  useReactFlow,
+  ConnectionMode
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { ChevronLeft, Play, Save, MoreHorizontal, TestTube, Share } from 'lucide-react';
+import { ChevronLeft, Play, Save, MoreHorizontal, TestTube, Share, Plus } from 'lucide-react';
 import { useWorkflowStore } from '../../store/workflowStore';
 import CustomNode from './CustomNode';
-import AddNodeButton from './AddNodeButton';
 import NodeConfigPanel from './NodeConfigPanel';
 import NodeLibrary from './NodeLibrary';
 
@@ -46,8 +46,10 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   const [showNodeLibrary, setShowNodeLibrary] = useState(false);
   const [workflowName, setWorkflowName] = useState(currentWorkflow?.name || 'New Workflow');
   const [isEditingName, setIsEditingName] = useState(false);
+  const [addNodePosition, setAddNodePosition] = useState<{ x: number; y: number } | null>(null);
 
   const reactFlowInstance = useReactFlow();
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   // Initialize nodes and edges from current workflow
   React.useEffect(() => {
@@ -56,18 +58,24 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
         id: node.id,
         type: 'custom',
         position: node.position,
-        data: node.data
+        data: node.data,
+        draggable: true
       }));
       
       const flowEdges = currentWorkflow.edges.map(edge => ({
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        type: edge.type || 'default',
+        type: 'default',
         label: edge.label,
         sourceHandle: edge.sourceHandle,
         targetHandle: edge.targetHandle,
-        style: { stroke: '#6366f1', strokeWidth: 2 }
+        style: { 
+          stroke: '#6366f1', 
+          strokeWidth: 2,
+          strokeDasharray: edge.type === 'conditional' ? '5,5' : undefined
+        },
+        animated: false
       }));
 
       setNodes(flowNodes);
@@ -89,7 +97,9 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
         addWorkflowEdge({
           source: params.source,
           target: params.target,
-          type: 'default'
+          type: 'default',
+          sourceHandle: params.sourceHandle,
+          targetHandle: params.targetHandle
         });
       }
     },
@@ -103,18 +113,31 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     }
   }, [currentWorkflow, setSelectedNode]);
 
+  const onPaneClick = useCallback(() => {
+    setSelectedNode(null);
+  }, [setSelectedNode]);
+
   const handleAddNode = (nodeTemplate: any, position?: { x: number; y: number }) => {
-    const newPosition = position || { 
-      x: Math.random() * 400 + 100, 
-      y: Math.random() * 400 + 100 
-    };
+    const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect();
+    
+    let newPosition = position;
+    if (!newPosition && reactFlowBounds && reactFlowInstance) {
+      // Center the new node in the viewport
+      const centerX = reactFlowBounds.width / 2;
+      const centerY = reactFlowBounds.height / 2;
+      newPosition = reactFlowInstance.project({ x: centerX, y: centerY });
+    }
+    
+    if (!newPosition) {
+      newPosition = { x: 250, y: 200 };
+    }
 
     const newNode = {
       type: nodeTemplate.type,
       position: newPosition,
       data: {
         label: nodeTemplate.label,
-        subtitle: nodeTemplate.subtitle || '',
+        subtitle: nodeTemplate.subtitle || nodeTemplate.description,
         description: nodeTemplate.description,
         icon: nodeTemplate.icon,
         integration: nodeTemplate.integration,
@@ -125,6 +148,21 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
 
     addNode(newNode);
     setShowNodeLibrary(false);
+    setAddNodePosition(null);
+  };
+
+  const handleAddNodeBetween = (sourceId: string, targetId: string) => {
+    const sourceNode = nodes.find(n => n.id === sourceId);
+    const targetNode = nodes.find(n => n.id === targetId);
+    
+    if (sourceNode && targetNode) {
+      const position = {
+        x: (sourceNode.position.x + targetNode.position.x) / 2,
+        y: (sourceNode.position.y + targetNode.position.y) / 2 + 50
+      };
+      setAddNodePosition(position);
+      setShowNodeLibrary(true);
+    }
   };
 
   const handleSave = () => {
@@ -197,12 +235,12 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
               onChange={(e) => setWorkflowName(e.target.value)}
               onBlur={handleNameSave}
               onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
-              className="text-lg font-semibold text-gray-900 bg-transparent border-b border-gray-300 focus:border-indigo-500 focus:outline-none"
+              className="text-lg font-semibold text-gray-900 bg-transparent border-b border-gray-300 focus:border-indigo-500 focus:outline-none px-2 py-1"
               autoFocus
             />
           ) : (
             <h1 
-              className="text-lg font-semibold text-gray-900 cursor-pointer hover:text-indigo-600"
+              className="text-lg font-semibold text-gray-900 cursor-pointer hover:text-indigo-600 px-2 py-1 rounded"
               onClick={handleNameEdit}
             >
               {workflowName}
@@ -211,12 +249,12 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
         </div>
 
         <div className="flex items-center gap-3">
-          <button className="text-gray-600 hover:text-gray-900 text-sm">
+          <button className="text-gray-600 hover:text-gray-900 text-sm font-medium">
             Test Connect Portal
           </button>
           <button 
             onClick={handleTest}
-            className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors text-sm"
+            className="flex items-center gap-2 px-3 py-2 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors text-sm font-medium"
           >
             <TestTube className="w-4 h-4" />
             Test Workflow
@@ -236,7 +274,7 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       {/* Main Content */}
       <div className="flex-1 flex">
         {/* Canvas */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative" ref={reactFlowWrapper}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -244,10 +282,16 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
+            connectionMode={ConnectionMode.Loose}
             fitView
             className="bg-gray-50"
             defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+            minZoom={0.5}
+            maxZoom={2}
+            snapToGrid={true}
+            snapGrid={[20, 20]}
           >
             <Background 
               color="#e5e7eb" 
@@ -263,27 +307,63 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
               className="bg-white border border-gray-200 rounded-lg"
               nodeColor="#6366f1"
               maskColor="rgba(0, 0, 0, 0.1)"
+              pannable
+              zoomable
             />
             
-            {/* Add Node Buttons */}
+            {/* Empty State */}
             {nodes.length === 0 && (
               <Panel position="top-center" className="mt-20">
-                <div className="text-center">
+                <div className="text-center bg-white rounded-lg border border-gray-200 p-8 shadow-sm">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Plus className="w-8 h-8 text-gray-400" />
+                  </div>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Start building your workflow</h3>
-                  <p className="text-gray-600 text-sm mb-4">Add your first trigger to get started</p>
+                  <p className="text-gray-600 text-sm mb-6 max-w-sm">
+                    Add your first trigger to get started. Triggers define when your workflow should run.
+                  </p>
                   <button
                     onClick={() => setShowNodeLibrary(true)}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                    className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
                   >
-                    Add Trigger
+                    Choose a Trigger
                   </button>
                 </div>
               </Panel>
             )}
+
+            {/* Add Node Buttons Between Nodes */}
+            {edges.map((edge) => {
+              const sourceNode = nodes.find(n => n.id === edge.source);
+              const targetNode = nodes.find(n => n.id === edge.target);
+              
+              if (!sourceNode || !targetNode) return null;
+              
+              const midX = (sourceNode.position.x + targetNode.position.x) / 2;
+              const midY = (sourceNode.position.y + targetNode.position.y) / 2;
+              
+              return (
+                <Panel key={`add-${edge.id}`} position="top-left" style={{ transform: `translate(${midX}px, ${midY}px)` }}>
+                  <button
+                    onClick={() => handleAddNodeBetween(edge.source, edge.target)}
+                    className="w-8 h-8 bg-white border-2 border-gray-300 rounded-full flex items-center justify-center hover:border-indigo-500 hover:bg-indigo-50 transition-colors shadow-sm"
+                  >
+                    <Plus className="w-4 h-4 text-gray-600" />
+                  </button>
+                </Panel>
+              );
+            })}
           </ReactFlow>
 
-          {/* Add Node Button Overlay */}
-          <AddNodeButton onAddNode={() => setShowNodeLibrary(true)} />
+          {/* Floating Add Button */}
+          {nodes.length > 0 && (
+            <button
+              onClick={() => setShowNodeLibrary(true)}
+              className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center z-10"
+            >
+              <Plus className="w-6 h-6" />
+            </button>
+          )}
         </div>
 
         {/* Right Panel - Node Configuration */}
@@ -298,8 +378,11 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       {/* Node Library Modal */}
       {showNodeLibrary && (
         <NodeLibrary
-          onSelectNode={handleAddNode}
-          onClose={() => setShowNodeLibrary(false)}
+          onSelectNode={(template) => handleAddNode(template, addNodePosition || undefined)}
+          onClose={() => {
+            setShowNodeLibrary(false);
+            setAddNodePosition(null);
+          }}
           integration={currentWorkflow.integration}
         />
       )}
