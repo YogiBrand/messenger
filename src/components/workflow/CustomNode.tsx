@@ -16,7 +16,9 @@ import {
   Calendar,
   Database,
   ArrowRight,
-  Pause
+  Pause,
+  X,
+  Plus
 } from 'lucide-react';
 import { useWorkflowStore } from '../../store/workflowStore';
 
@@ -138,13 +140,21 @@ const CustomNode: React.FC<NodeProps> = ({ id, data, selected }) => {
       <div
         onClick={handleClick}
         className={`
-          bg-white border-2 rounded-xl shadow-sm min-w-[280px] cursor-pointer transition-all
+          bg-white border-2 rounded-xl shadow-sm min-w-[280px] cursor-pointer transition-all relative
           ${selected 
             ? 'border-indigo-500 shadow-lg ring-2 ring-indigo-200' 
             : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
           }
         `}
       >
+        {/* Delete Button - Top Right Corner */}
+        <button
+          onClick={handleDelete}
+          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 z-10"
+        >
+          <X className="w-3 h-3" />
+        </button>
+
         {/* Node Header */}
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
@@ -283,67 +293,29 @@ const CustomNode: React.FC<NodeProps> = ({ id, data, selected }) => {
         </div>
       </div>
 
-      {/* Output Handles */}
-      {isConditionalNode ? (
-        <>
-          {/* Yes Handle */}
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="yes"
-            className="w-3 h-3 bg-green-500 border-2 border-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ bottom: -6, left: '30%' }}
-          />
-          {/* No Handle */}
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="no"
-            className="w-3 h-3 bg-red-500 border-2 border-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ bottom: -6, right: '30%' }}
-          />
-          
-          {/* Branch Labels */}
-          <div className="absolute -bottom-8 left-[30%] transform -translate-x-1/2 text-xs text-green-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity bg-white px-2 py-1 rounded shadow-sm">
-            Yes
-          </div>
-          <div className="absolute -bottom-8 right-[30%] transform translate-x-1/2 text-xs text-red-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity bg-white px-2 py-1 rounded shadow-sm">
-            No
-          </div>
-        </>
-      ) : isFanOutNode ? (
-        <>
-          {/* Multiple output handles for fan out */}
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="output-1"
-            className="w-3 h-3 bg-blue-500 border-2 border-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ bottom: -6, left: '25%' }}
-          />
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="output-2"
-            className="w-3 h-3 bg-blue-500 border-2 border-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ bottom: -6, left: '50%' }}
-          />
-          <Handle
-            type="source"
-            position={Position.Bottom}
-            id="output-3"
-            className="w-3 h-3 bg-blue-500 border-2 border-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ bottom: -6, right: '25%' }}
-          />
-        </>
-      ) : (
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          className="w-3 h-3 bg-indigo-500 border-2 border-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-          style={{ bottom: -6 }}
-        />
-      )}
+      {/* Output Handle - Single handle at bottom for vertical flow */}
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="w-3 h-3 bg-indigo-500 border-2 border-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ bottom: -6 }}
+      />
+
+      {/* Add Node Button - Below this node */}
+      <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            // Trigger add node functionality
+            if (data.onAddNodeBelow) {
+              data.onAddNodeBelow(id);
+            }
+          }}
+          className="w-6 h-6 bg-white border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center hover:border-indigo-500 hover:bg-indigo-50 transition-colors shadow-sm"
+        >
+          <Plus className="w-3 h-3 text-gray-600" />
+        </button>
+      </div>
     </div>
   );
 };

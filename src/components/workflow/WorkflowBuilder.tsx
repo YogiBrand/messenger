@@ -82,7 +82,7 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   const [showNodeLibrary, setShowNodeLibrary] = useState(false);
   const [workflowName, setWorkflowName] = useState(currentWorkflow?.name || 'New Workflow');
   const [isEditingName, setIsEditingName] = useState(false);
-  const [addNodePosition, setAddNodePosition] = useState<{ x: number; y: number } | null>(null);
+  const [addNodeAfter, setAddNodeAfter] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
   const [workflowStatus, setWorkflowStatus] = useState<'draft' | 'published' | 'testing'>('draft');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -93,7 +93,7 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
   // Initialize nodes and edges from current workflow
   useEffect(() => {
     if (currentWorkflow) {
-      const flowNodes = currentWorkflow.nodes.map(node => ({
+      const flowNodes = currentWorkflow.nodes.map((node, index) => ({
         id: node.id,
         type: 'custom',
         position: node.position,
@@ -102,25 +102,29 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
           onConfigClick: () => {
             setSelectedNode(node);
             setConfigPanelOpen(true);
+          },
+          onAddNodeBelow: (nodeId: string) => {
+            setAddNodeAfter(nodeId);
+            setShowNodeLibrary(true);
           }
         },
         draggable: true
       }));
       
-      const flowEdges = currentWorkflow.edges.map(edge => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        type: 'default',
-        label: edge.label,
-        sourceHandle: edge.sourceHandle,
-        targetHandle: edge.targetHandle,
-        ...edgeOptions,
-        style: {
-          ...edgeOptions.style,
-          strokeDasharray: edge.type === 'conditional' ? '5,5' : undefined
-        }
-      }));
+      // Create edges connecting nodes vertically
+      const flowEdges: Edge[] = [];
+      for (let i = 0; i < flowNodes.length - 1; i++) {
+        const sourceNode = flowNodes[i];
+        const targetNode = flowNodes[i + 1];
+        
+        flowEdges.push({
+          id: `edge-${sourceNode.id}-${targetNode.id}`,
+          source: sourceNode.id,
+          target: targetNode.id,
+          type: 'default',
+          ...edgeOptions
+        });
+      }
 
       setNodes(flowNodes);
       setEdges(flowEdges);
@@ -163,28 +167,41 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
     setConfigPanelOpen(false);
   }, [setSelectedNode, setConfigPanelOpen]);
 
-  const handleAddNode = (nodeTemplate: any, position?: { x: number; y: number }) => {
-    const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect();
-    
-    let newPosition = position;
-    if (!newPosition && reactFlowBounds && reactFlowInstance) {
-      const centerX = reactFlowBounds.width / 2;
-      const centerY = reactFlowBounds.height / 2;
-      newPosition = reactFlowInstance.project({ x: centerX, y: centerY });
-    }
-    
-    if (!newPosition) {
-      newPosition = { x: 250, y: 200 };
-    }
+  const handleAddNode = (nodeTemplate: any) => {
+    if (!currentWorkflow) return;
 
-    // Auto-position nodes vertically if it's the first node
-    if (nodes.length === 0) {
+    let newPosition = { x: 400, y: 100 };
+    
+    if (addNodeAfter) {
+      // Find the node we're adding after
+      const afterNode = currentWorkflow.nodes.find(n => n.id === addNodeAfter);
+      if (afterNode) {
+        // Position the new node below the selected node
+        newPosition = { 
+          x: afterNode.position.x, 
+          y: afterNode.position.y + 150 
+        };
+        
+        // Shift all nodes below this position down
+        const nodesToShift = currentWorkflow.nodes.filter(n => 
+          n.position.y > afterNode.position.y && n.position.x === afterNode.position.x
+        );
+        
+        nodesToShift.forEach(node => {
+          const updatedNode = {
+            ...node,
+            position: { ...node.position, y: node.position.y + 150 }
+          };
+          // Update the node position in the store
+          // This would need to be implemented in the store
+        });
+      }
+    } else if (currentWorkflow.nodes.length === 0) {
+      // First node
       newPosition = { x: 400, y: 100 };
-    } else if (nodes.length === 1) {
-      newPosition = { x: 400, y: 250 };
     } else {
-      // Position below the last node
-      const lastNode = nodes[nodes.length - 1];
+      // Add at the end
+      const lastNode = currentWorkflow.nodes[currentWorkflow.nodes.length - 1];
       newPosition = { x: lastNode.position.x, y: lastNode.position.y + 150 };
     }
 
@@ -205,7 +222,7 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
 
     addNode(newNode);
     setShowNodeLibrary(false);
-    setAddNodePosition(null);
+    setAddNodeAfter(null);
   };
 
   const handleSave = () => {
@@ -405,6 +422,9 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
               snapToGrid={true}
               snapGrid={[20, 20]}
               deleteKeyCode={['Backspace', 'Delete']}
+              nodesDraggable={true}
+              nodesConnectable={false} // Disable manual connections since we use vertical flow
+              elementsSelectable={true}
             >
               <Background 
                 color="#e5e7eb" 
@@ -446,39 +466,21 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
                 </Panel>
               )}
 
-              {/* Add Node Buttons Between Connected Nodes */}
-              {edges.map((edge) => {
-                const sourceNode = nodes.find(n => n.id === edge.source);
-                const targetNode = nodes.find(n => n.id === edge.target);
-                
-                if (!sourceNode || !targetNode) return null;
-                
-                const midX = (sourceNode.position.x + targetNode.position.x) / 2 + 120;
-                const midY = (sourceNode.position.y + targetNode.position.y) / 2 + 40;
-                
-                return (
-                  <Panel key={`add-${edge.id}`} position="top-left" style={{ transform: `translate(${midX}px, ${midY}px)` }}>
-                    <button
-                      onClick={() => {
-                        setAddNodePosition({ x: midX - 120, y: midY - 40 });
-                        setShowNodeLibrary(true);
-                      }}
-                      className="w-8 h-8 bg-white border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center hover:border-indigo-500 hover:bg-indigo-50 transition-colors shadow-sm"
-                    >
-                      <Plus className="w-4 h-4 text-gray-600" />
-                    </button>
-                  </Panel>
-                );
-              })}
+              {/* Add Node Button at Bottom */}
+              {nodes.length > 0 && (
+                <Panel position="bottom-center" className="mb-20">
+                  <button
+                    onClick={() => {
+                      setAddNodeAfter(null);
+                      setShowNodeLibrary(true);
+                    }}
+                    className="w-8 h-8 bg-white border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center hover:border-indigo-500 hover:bg-indigo-50 transition-colors shadow-sm"
+                  >
+                    <Plus className="w-4 h-4 text-gray-600" />
+                  </button>
+                </Panel>
+              )}
             </ReactFlow>
-
-            {/* Floating Add Button */}
-            <button
-              onClick={() => setShowNodeLibrary(true)}
-              className="absolute bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center z-10"
-            >
-              <Plus className="w-6 h-6" />
-            </button>
           </div>
 
           {/* Right Panel - Node Configuration */}
@@ -494,10 +496,10 @@ const WorkflowBuilderContent: React.FC<WorkflowBuilderProps> = ({ onBack }) => {
       {/* Node Library Modal */}
       {showNodeLibrary && (
         <NodeLibrary
-          onSelectNode={(template) => handleAddNode(template, addNodePosition || undefined)}
+          onSelectNode={(template) => handleAddNode(template)}
           onClose={() => {
             setShowNodeLibrary(false);
-            setAddNodePosition(null);
+            setAddNodeAfter(null);
           }}
           integration={currentWorkflow.integration}
         />
